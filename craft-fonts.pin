@@ -1,0 +1,8 @@
+{
+  "upstream": "storytold/craft-fonts",
+  "ssh": "git@github.com:storytold/craft-fonts.git",
+  "https": "https://github.com/storytold/craft-fonts.git",
+  "commit": "3d9ab3a132ed0eff457e424226a435a901da30d3",
+  "strategy": "shallow-fetch-pinned-commit",
+  "note": "figcraft 的 web 构建靠 CRAFT_FONTS_DIR 指向本仓库才能嵌入 Noto Sans CJK SC（中文 UI 文本）。仓库含 16MB 字体，不入库、按需浅拉。"
+}

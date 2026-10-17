@@ -1,0 +1,29 @@
+{
+  "devUrl": "http://127.0.0.1:6482",
+  "developerName": "jry",
+  "displayName": "FigCraft",
+  "displayNameCN": "FigCraft 设计",
+  "entry": "dist/index.html",
+  "quickDev": true,
+  "hasAd": false,
+  "icon": "🎨",
+  "inPluginPurchase": false,
+  "key": [
+    "figcraft",
+    "fig",
+    "界面设计",
+    "原型设计",
+    "UI 设计",
+    "设计工具",
+    "矢量设计",
+    "组件",
+    "Figma 开源版",
+    "设计稿"
+  ],
+  "openInBrowser": false,
+  "packid": "otools-figcraft",
+  "screenshots": [],
+  "summary": "FigCraft（开源、纯 Rust 重写的 Figma 式界面设计工具）的 OTools 插件版：画布、自动布局、组件与变体、矢量网络、样式与变量、原型，以及 .figcraft / .fig / SVG 导入与导出。",
+  "uuid": "otools-figcraft",
+  "version": "0.6.0"
+}

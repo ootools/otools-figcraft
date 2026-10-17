@@ -1,0 +1,12 @@
+# 上游源码（按 upstream.pin 按需浅拉取，不入库）
+upstream/
+# 可选的 craft-fonts 构建输入（中文等 CJK 字体来源，不入库）
+craft-fonts/
+# 构建产物
+dist/
+shell/target/
+shell/Cargo.lock
+# 本地打包产物
+dist-pack/
+node_modules/
+*.log

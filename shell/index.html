@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <title>FigCraft</title>
+  <link data-trunk rel="rust" data-bin="otools-figcraft" data-wasm-opt="z" data-weak-refs />
+  <link data-trunk rel="copy-file" href="favicon.svg" />
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <style>
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #1b1d22; }
+    #figcraft_canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+    #figcraft_loading { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      color: #b8b8b8; font: 14px system-ui, sans-serif; pointer-events: none; }
+  </style>
+  <script>
+    /*
+     * OTools 宿主桥（插件唯一需要写的 JS）。
+     * ------------------------------------------------------------------
+     * 上游 FigCraft 的网页版没有文件系统：打开靠 <input type=file>，保存/导出靠浏览器下载。
+     * OTools 宿主注入了 `window.otools`，提供真正的文件对话框与磁盘读写，所以这里
+     * 把「选文件 / 读文件 / 另存 / 写文件 / 导出」换成宿主调用，WASM 侧（shell/src/otools.rs
+     * 与 engine 的 host_io 补丁）通过 wasm-bindgen 直接调下面这几个函数。
+     *
+     * 宿主能力有两条路，任一条通就算「在 OTools 里」：
+     *   1. `window.otools` / `window.utools`：宿主注入的包装 API
+     *      （dialog.open/save + readHostFile/writeHostFile）。
+     *   2. `window.__TAURI_INTERNALS__.invoke`：Tauri 原生 IPC，可直接调
+     *      `tools_webview_pick_files` / `tools_webview_read_file` /
+     *      `tools_webview_pick_save_path` / `tools_webview_write_file`。
+     * 两条路都不通（把 dist 拖进普通浏览器）才退回上游的浏览器行为。
+     *
+     * 参数形状（Rust 侧 `rename_all = "camelCase"`）：
+     *   - pick_files / pick_save_path：`{ options: {...} }`
+     *   - read_file：`{ path }`
+     *   - write_file：`{ request: { path, dataBase64 } }`（结构体参数，别平铺！）
+     * 实测个别 webview 里整段 init script 的后半段不到岗（`window.otools` 没定义），
+     * 此时第 2 条路照样能弹宿主对话框、读写宿主文件；只认第 1 条路会让插件
+     * **静默**退化成浏览器下载——每次保存都下一个新文件，正是要避免的事故。
+     *
+     * 不依赖 otools-plugin-sdk：插件是纯 Rust/WASM 应用，没有前端打包环节。
+     */
+    (function () {
+      // 打开/另存时给对话框的扩展名过滤：OPEN 能读的格式（与上游 OPEN_EXTENSIONS 一致）
+      var DESIGN_FILTERS = [{ name: 'FigCraft 设计稿', extensions: ['figcraft', 'fig', 'json'] }];
+      var IMPORT_FILTERS = [{ name: '设计稿 / 图片 / SVG', extensions: ['figcraft', 'fig', 'json', 'svg', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'tif', 'tiff'] }];
+
+      function baseName(p) {
+        var s = String(p || '');
+        var i = Math.max(s.lastIndexOf('/'), s.lastIndexOf('\\'));
+        return i >= 0 ? s.slice(i + 1) : s;
+      }
+
+      // 「文件名 -> 上次真实落盘路径」的映射，让再次保存不再弹对话框。
+      // 存 localStorage，跨插件重启仍然记得。
+      var NAME_MAP_KEY = 'figcraft.otools.paths';
+      function loadMap() {
+        try { return JSON.parse(window.localStorage.getItem(NAME_MAP_KEY) || '{}') || {}; } catch (e) { return {}; }
+      }
+      function saveMap(map) {
+        try { window.localStorage.setItem(NAME_MAP_KEY, JSON.stringify(map)); } catch (e) { /* 忽略 */ }
+      }
+
+      function fail(message) { return Promise.reject(new Error(message)); }
+
+      // —— 宿主能力探测 ——
+
+      function wrapper() {
+        var a = (typeof window !== 'undefined' && (window.otools || window.utools)) || null;
+        return a && a.dialog && typeof a.dialog.open === 'function' && typeof a.readHostFile === 'function' ? a : null;
+      }
+
+      function tauriInvoke() {
+        var candidates = [window];
+        try { if (window.parent && window.parent !== window) candidates.push(window.parent); } catch (e) { /* 跨域，忽略 */ }
+        try { if (window.top && window.top !== window) candidates.push(window.top); } catch (e) { /* 跨域，忽略 */ }
+        for (var i = 0; i < candidates.length; i++) {
+          var t = candidates[i] && candidates[i].__TAURI_INTERNALS__;
+          if (t && typeof t.invoke === 'function') return t.invoke.bind(t);
+        }
+        return null;
+      }
+
+      function hostReady() { return !!wrapper() || !!tauriInvoke(); }
+
+      function firstPath(picked) {
+        if (Array.isArray(picked)) return picked.length ? picked[0] : null;
+        if (picked && typeof picked === 'object' && typeof picked.path === 'string') return picked.path.trim() || null;
+        return typeof picked === 'string' ? (picked.trim() || null) : null;
+      }
+
+      function pickOpenPath(filters) {
+        var a = wrapper();
+        if (a) return a.dialog.open({ directory: false, multiple: false, title: '打开设计稿', filters: filters }).then(firstPath);
+        var invoke = tauriInvoke();
+        if (!invoke) return fail('OTools 宿主不可用');
+        return invoke('tools_webview_pick_files', { options: { multiple: false, title: '打开设计稿', filters: filters } }).then(function (files) {
+          var list = Array.isArray(files) ? files : (files ? [files] : []);
+          var first = list[0];
+          if (!first) return null;
+          return typeof first === 'string' ? first.trim() || null : (first.path ? String(first.path).trim() || null : null);
+        });
+      }
+
+      function readHostFile(path) {
+        var a = wrapper();
+        if (a) return a.readHostFile(path);
+        var invoke = tauriInvoke();
+        if (!invoke) return fail('OTools 宿主不可用');
+        return invoke('tools_webview_read_file', { path: path });
+      }
+
+      function writeHostFile(path, dataBase64) {
+        // Rust 侧 `tools_webview_write_file(request: WebviewWriteFileRequest)` 收的是
+        // 名为 `request` 的结构体，平铺 `{path, dataBase64}` 会被 Tauri 以
+        // "missing required key `request`" 拒掉——宿主自带的 writeHostFile 包装正是这么调的
+        // （ latent bug），所以只要 raw IPC 在就优先走 raw；包装只在 raw 不在时兜底。
+        var invoke = tauriInvoke();
+        if (invoke) {
+          return invoke('tools_webview_write_file', { request: { path: path, dataBase64: dataBase64 } }).catch(function (rawError) {
+            var a = wrapper();
+            if (a && typeof a.writeHostFile === 'function') return a.writeHostFile({ path: path, dataBase64: dataBase64 });
+            throw rawError;
+          });
+        }
+        var a = wrapper();
+        if (a && typeof a.writeHostFile === 'function') return a.writeHostFile({ path: path, dataBase64: dataBase64 });
+        return fail('OTools 宿主不可用');
+      }
+
+      function splitPath(p) {
+        var s = String(p || '').trim();
+        if (!s) return { directory: undefined, fileName: undefined };
+        var m = s.match(/^(.*[\\/])([^\\/]+)$/);
+        if (!m) return { directory: undefined, fileName: s };
+        return { directory: m[1].replace(/[\\/]+$/, '') || undefined, fileName: m[2].trim() || undefined };
+      }
+
+      function pickSavePath(defaultPath) {
+        var a = wrapper();
+        if (a) return a.dialog.save({ title: '保存设计稿', defaultPath: defaultPath, filters: DESIGN_FILTERS }).then(firstPath);
+        var invoke = tauriInvoke();
+        if (!invoke) return fail('OTools 宿主不可用');
+        var sp = splitPath(defaultPath);
+        return invoke('tools_webview_pick_save_path', {
+          options: { title: '保存设计稿', suggestedName: sp.fileName, directory: sp.directory, filters: DESIGN_FILTERS },
+        }).then(function (meta) {
+          if (!meta) return null;
+          return typeof meta === 'string' ? meta.trim() || null : (meta.path ? String(meta.path).trim() || null : null);
+        });
+      }
+
+      window.figcraftOtools = {
+        /** 是否运行在 OTools 宿主里（两条宿主通道任一条通即为真；否则退回上游的浏览器行为）。 */
+        available: function () { return hostReady(); },
+
+        /** OTools 的界面主题（dark/light/空串），用于给 egui 选初始主题。 */
+        theme: function () {
+          if (typeof document === 'undefined') return '';
+          var cl = document.documentElement && document.documentElement.classList;
+          if (!cl) return '';
+          if (cl.contains('dark')) return 'dark';
+          if (cl.contains('light')) return 'light';
+          return '';
+        },
+
+        // 宿主界面语言（BCP 47，如 zh-CN）。OTools 在插件 webview 里注入
+        // `window.__OTOOLS_LOCALE__` 并同步 `document.documentElement.lang`，
+        // 切换语言时派发 `otools-locale-changed` 事件。
+        language: function () {
+          try {
+            var l =
+              (window.__OTOOLS_LOCALE__ && window.__OTOOLS_LOCALE__.locale) ||
+              (document.documentElement && document.documentElement.lang) ||
+              (typeof navigator !== 'undefined' && navigator.language) ||
+              '';
+            return l || '';
+          } catch (e) { return ''; }
+        },
+
+        /**
+         * 打开设计稿：弹宿主的打开文件对话框，读取选中的文件。
+         * @returns {Promise<Array<{name: string, path: string, dataBase64: string}>>}
+         */
+        openFiles: function () {
+          if (!hostReady()) return fail('OTools 打开文件对话框不可用');
+          return pickOpenPath(IMPORT_FILTERS).then(function (path) {
+            if (!path) return [];
+            return readHostFile(path).then(function (file) {
+              var name = (file && file.name) || baseName(path);
+              var map = loadMap();
+              map[name] = path;
+              saveMap(map);
+              return [{ name: name, path: path, dataBase64: (file && file.dataBase64) || '' }];
+            });
+          });
+        },
+
+        /**
+         * 另存为 / 导出：弹宿主的另存对话框，返回选中的路径（取消为 null）。
+         * @returns {Promise<string|null>}
+         */
+        pickSavePath: function (name) {
+          if (!hostReady()) return fail('OTools 保存对话框不可用');
+          var map = loadMap();
+          var known = map[name];
+          var suggested = known || name;
+          return pickSavePath(suggested).then(function (path) {
+            if (!path) return null;
+            map[name] = path;
+            saveMap(map);
+            return path;
+          });
+        },
+
+        /**
+         * 写宿主磁盘文件（engine 的 host_io 与导出下载都走这条）。
+         * @returns {Promise<void>}
+         */
+        writeHostFile: function (path, dataBase64) {
+          if (!hostReady()) return fail('OTools 写文件不可用');
+          return writeHostFile(path, dataBase64);
+        }
+      };
+    })();
+  </script>
+</head>
+<body>
+  <canvas id="figcraft_canvas"></canvas>
+  <div id="figcraft_loading">正在加载 FigCraft…</div>
+</body>
+</html>

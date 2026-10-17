@@ -1,0 +1,67 @@
+# FigCraft 的 OTools 插件外壳。
+#
+# 这一层是我们自己的代码：它把上游 `apps/figcraft-web` 的浏览器外壳换成
+# 「OTools 插件外壳」——UI 仍然是上游的 `figcraft-ui-egui`（原封不动），
+# 唯一区别是文件从哪来、存到哪去（见 `src/otools.rs` 与 engine 的 host_io 补丁）。
+#
+# 上游仓库整份放在 `../upstream`（git subtree，保持原样勿改），
+# 所以本 crate 用 path 依赖直接复用上游的 crate，不复制、不改动任何上游源码
+# （engine 的 host_io 是按需打的补丁，见 shell/patches/）。
+[package]
+name = "otools-figcraft-shell"
+description = "FigCraft as an OTools plugin: the upstream egui UI compiled to WebAssembly, with OTools host file I/O"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+publish = false
+
+# 独立的 workspace：上游 `upstream/` 有自己的 workspace，本 crate 不能并进去
+# （它是 wasm-only 的，并进去会让宿主的 `cargo build` 也去编译 eframe/wgpu）。
+[workspace]
+
+[[bin]]
+name = "otools-figcraft"
+path = "src/main.rs"
+
+[dependencies]
+figcraft-engine = { path = "../upstream/crates/engine" }
+figcraft-ui-egui = { path = "../upstream/crates/ui-egui" }
+figcraft-collab-net = { path = "../upstream/crates/collab-net" }
+egui = { version = "0.36", default-features = false }
+log = { version = "0.4", default-features = false }
+serde_json = { version = "1", features = ["float_roundtrip"] }
+base64 = "0.22"
+
+# 只在 wasm 下需要的依赖（宿主/桌面下本 crate 什么都不做）
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+eframe = { version = "0.36", default-features = false, features = ["persistence", "default_fonts", "wgpu", "accesskit"] }
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies.web-sys]
+version = "0.3"
+features = [
+  "Blob",
+  "BlobPropertyBag",
+  "Document",
+  "Element",
+  "EventTarget",
+  "File",
+  "FileList",
+  "HtmlAnchorElement",
+  "HtmlCanvasElement",
+  "HtmlElement",
+  "HtmlInputElement",
+  "Location",
+  "MediaQueryList",
+  "Navigator",
+  "Url",
+  "UrlSearchParams",
+  "Window",
+]
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 16

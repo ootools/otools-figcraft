@@ -1,0 +1,104 @@
+diff --git a/crates/engine/Cargo.toml b/crates/engine/Cargo.toml
+index f610c38..f6c3145 100644
+--- a/crates/engine/Cargo.toml
++++ b/crates/engine/Cargo.toml
+@@ -29,6 +29,12 @@ base64 = { workspace = true }
+ regex = { workspace = true }
+ web-time = "1.1.0"
+ 
++# OTools 插件外壳在 wasm 下把文件 I/O 接到宿主；只在 wasm 目标需要这些依赖。
++[target.'cfg(target_arch = "wasm32")'.dependencies]
++wasm-bindgen = "0.2"
++js-sys = "0.3"
++wasm-bindgen-futures = "0.4"
++
+ [dev-dependencies]
+ wat = { workspace = true }
+ image = { workspace = true }
+diff --git a/crates/engine/src/cmd/file.rs b/crates/engine/src/cmd/file.rs
+index 5e27c57..ee8b4bf 100644
+--- a/crates/engine/src/cmd/file.rs
++++ b/crates/engine/src/cmd/file.rs
+@@ -11,6 +11,10 @@ use super::{CommandSpec, ok};
+ use crate::params::*;
+ use crate::{DocState, EngineError, Result, Session, bad, spec};
+ 
++// OTools 插件外壳在 wasm 下把同步的 `read`/`write` 接到 `window.figcraftOtools`。
++#[cfg(target_arch = "wasm32")]
++pub mod host_io;
++
+ pub fn specs() -> Vec<CommandSpec> {
+     vec![
+         spec!("file.new", "New design file", "{name?}", false, |s, p| {
+@@ -428,6 +432,9 @@ fn read(path: &str) -> Result<Vec<u8>> {
+ 
+ #[cfg(target_arch = "wasm32")]
+ fn read(path: &str) -> Result<Vec<u8>> {
++    if let Some(b) = host_io::cache_get(path) {
++        return Ok(b);
++    }
+     Err(EngineError::Other(format!("{path}: no file system in the browser")))
+ }
+ 
+@@ -450,7 +457,8 @@ pub(crate) fn write(path: &str, bytes: &[u8]) -> Result<()> {
+ 
+ #[cfg(target_arch = "wasm32")]
+ pub(crate) fn write(path: &str, _bytes: &[u8]) -> Result<()> {
+-    Err(EngineError::Other(format!("{path}: no file system in the browser")))
++    host_io::write(path, _bytes.to_vec());
++    Ok(())
+ }
+ 
+ fn ext(path: &str) -> String {
+diff --git a/crates/engine/src/cmd/file/host_io.rs b/crates/engine/src/cmd/file/host_io.rs
+new file mode 100644
+index 0000000..0c93df5
+--- /dev/null
++++ b/crates/engine/src/cmd/file/host_io.rs
+@@ -0,0 +1,46 @@
++//! OTools 宿主文件桥（wasm）：把 engine 同步的 `read`/`write` 接到 `window.figcraftOtools`。
++//!
++//! 本文件是 `crates/engine/src/cmd/file.rs` 里 `pub mod host_io;`（仅 wasm32 声明）的对应模块体。
++//! 由 `shell/patches/figcraft-hostio.patch` 一并落入上游；上线后由 `file.rs` 的
++//! `host_io::cache_get` / `host_io::write` 调用。
++
++use std::cell::RefCell;
++use std::collections::HashMap;
++
++use base64::Engine as _;
++use wasm_bindgen::prelude::*;
++use wasm_bindgen_futures::JsFuture;
++use js_sys;
++
++thread_local! {
++    /// 宿主读到的文件字节，按路径缓存，供同步 `read` 命中。
++    static OPENED: RefCell<HashMap<String, Vec<u8>>> = RefCell::new(HashMap::new());
++}
++
++#[wasm_bindgen]
++extern "C" {
++    #[wasm_bindgen(js_namespace = figcraftOtools, js_name = "available")]
++    fn host_available() -> bool;
++    #[wasm_bindgen(js_namespace = figcraftOtools, js_name = "writeHostFile")]
++    fn host_write_file(path: &str, data_base64: &str) -> js_sys::Promise;
++}
++
++/// 宿主读到文件后由插件外壳调用：缓存字节，让随后的 `file.open` 同步 `read` 命中。
++pub fn cache_opened(path: &str, bytes: Vec<u8>) {
++    OPENED.with(|m| m.borrow_mut().insert(path.to_string(), bytes));
++}
++
++pub fn cache_get(path: &str) -> Option<Vec<u8>> {
++    OPENED.with(|m| m.borrow().get(path).cloned())
++}
++
++pub fn write(path: &str, bytes: Vec<u8>) {
++    if !host_available() {
++        return;
++    }
++    let data_base64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
++    let path = path.to_string();
++    wasm_bindgen_futures::spawn_local(async move {
++        let _ = JsFuture::from(host_write_file(&path, &data_base64)).await;
++    });
++}
