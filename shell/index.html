@@ -222,6 +222,62 @@
           return writeHostFile(path, dataBase64);
         }
       };
+
+      // <otools-mcp-bridge>
+      // The OTools host evaluates this object in the plugin webview. The Rust side reports the
+      // upstream figcraft-mcp tool table and runs tools against the live document; this shim only
+      // preserves the host's JSON string / array contract and turns every failure into MCP shape.
+      function mcpError(error) {
+        return {
+          content: [{ type: 'text', text: String((error && error.message) || error) }],
+          isError: true
+        };
+      }
+      var MCP_READY_TIMEOUT_MS = typeof window.__OTOOLS_MCP_READY_TIMEOUT_MS === 'number'
+        ? window.__OTOOLS_MCP_READY_TIMEOUT_MS
+        : 4500;
+
+      /** Wait for a wasm export installed after the initial HTML script (the host's own wait is 5s). */
+      function waitForMcpExport(name) {
+        if (typeof window[name] === 'function') return Promise.resolve(window[name]);
+        var started = Date.now();
+        return new Promise(function (resolve, reject) {
+          (function poll() {
+            if (typeof window[name] === 'function') return resolve(window[name]);
+            if (Date.now() - started >= MCP_READY_TIMEOUT_MS) {
+              return reject(new Error('FigCraft MCP backend did not start in time (' + name + ' is missing)'));
+            }
+            setTimeout(poll, 50);
+          })();
+        });
+      }
+
+      window.__otoolsMcp = {
+        /** @returns {Promise<Array<object>>} upstream tool definitions (empty if WASM cannot start). */
+        listTools: function () {
+          return waitForMcpExport('figcraftMcpListTools').then(function (list) {
+            var parsed = JSON.parse(list());
+            return Array.isArray(parsed) ? parsed : [];
+          }).catch(function (error) {
+            console.warn('[figcraft-mcp] listTools failed', error);
+            return [];
+          });
+        },
+
+        /** @returns {Promise<{content: Array<object>, isError: boolean}>} */
+        call: function (name, args) {
+          return waitForMcpExport('figcraftMcpCall').then(function (call) {
+            var parsed = JSON.parse(call(String(name || ''), JSON.stringify(args || {})));
+            if (!parsed || !Array.isArray(parsed.content)) {
+              throw new Error('FigCraft MCP backend returned an invalid result');
+            }
+            return parsed;
+          }).catch(function (error) {
+            return mcpError(error);
+          });
+        }
+      };
+      // </otools-mcp-bridge>
     })();
   </script>
 </head>

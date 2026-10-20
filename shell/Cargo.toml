@@ -27,6 +27,7 @@ path = "src/main.rs"
 figcraft-engine = { path = "../upstream/crates/engine" }
 figcraft-ui-egui = { path = "../upstream/crates/ui-egui" }
 figcraft-collab-net = { path = "../upstream/crates/collab-net" }
+figcraft-mcp = { path = "../upstream/crates/mcp" }
 egui = { version = "0.36", default-features = false }
 log = { version = "0.4", default-features = false }
 serde_json = { version = "1", features = ["float_roundtrip"] }

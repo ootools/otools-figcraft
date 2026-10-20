@@ -13,8 +13,6 @@
 //!
 //! JS 侧的实现见 `shell/index.html` 里的 `window.figcraftOtools`。
 
-use std::path::PathBuf;
-
 use base64::Engine as _;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;

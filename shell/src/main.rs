@@ -12,6 +12,8 @@
 #[cfg(target_arch = "wasm32")]
 mod download;
 #[cfg(target_arch = "wasm32")]
+mod mcp;
+#[cfg(target_arch = "wasm32")]
 mod otools;
 
 #[cfg(target_arch = "wasm32")]
@@ -25,7 +27,7 @@ mod web {
 
     use crate::OtoolsServices;
 
-    const CANVAS_ID: &str = "figcraft_canvas";
+    pub(crate) const CANVAS_ID: &str = "figcraft_canvas";
     const LOADING_ID: &str = "figcraft_loading";
 
     thread_local! {
@@ -35,13 +37,40 @@ mod web {
         static APP_CTX: RefCell<Option<egui::Context>> = RefCell::new(None);
     }
 
-    struct WebShell {
-        fig: FigApp,
+    pub(crate) struct WebShell {
+        pub(crate) fig: FigApp,
+        pub(crate) ctx: Option<egui::Context>,
+    }
+
+    thread_local! {
+        /// The running eframe app, for MCP calls. `app_mut` uses `try_borrow_mut`, so a call
+        /// arriving during a UI frame fails cleanly instead of re-entering the app.
+        static MCP_RUNNER: RefCell<Option<eframe::WebRunner>> = const { RefCell::new(None) };
+    }
+
+    pub(crate) fn with_live_app<T>(f: impl FnOnce(&mut WebShell) -> T) -> Result<T, String> {
+        MCP_RUNNER.with(|slot| {
+            let slot = slot.borrow();
+            let runner = slot
+                .as_ref()
+                .ok_or_else(|| "FigCraft is still starting".to_string())?;
+            let mut app = runner.app_mut::<WebShell>().ok_or_else(|| {
+                "FigCraft is busy drawing a frame; retry the MCP call".to_string()
+            })?;
+            Ok(f(&mut app))
+        })
     }
 
     impl eframe::App for WebShell {
+        #[cfg(target_arch = "wasm32")]
+        fn as_any_mut(&mut self) -> Option<&mut dyn std::any::Any> {
+            Some(&mut *self)
+        }
+
         fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-            APP_CTX.with(|c| *c.borrow_mut() = Some(ui.ctx().clone()));
+            let ctx = ui.ctx().clone();
+            self.ctx = Some(ctx.clone());
+            APP_CTX.with(|c| *c.borrow_mut() = Some(ctx));
             // 跟随宿主语言切换：变了就更新 prefs.language。
             if NEEDS_LANG_SYNC.with(|f| f.replace(false)) {
                 let host = crate::otools::language();
@@ -50,17 +79,24 @@ mod web {
                 }
             }
             // 吞掉外部链接（Discord 等社区外链），点击不再跳出插件。
-            ui.ctx().output_mut(|o| o.commands.retain(|c| !matches!(c, egui::OutputCommand::OpenUrl(_))));
+            ui.ctx().output_mut(|o| {
+                o.commands
+                    .retain(|c| !matches!(c, egui::OutputCommand::OpenUrl(_)))
+            });
             self.fig.ui(ui);
         }
     }
 
     fn query() -> String {
-        web_sys::window().and_then(|w| w.location().search().ok()).unwrap_or_default()
+        web_sys::window()
+            .and_then(|w| w.location().search().ok())
+            .unwrap_or_default()
     }
 
     fn query_param(key: &str) -> Option<String> {
-        web_sys::UrlSearchParams::new_with_str(&query()).ok()?.get(key)
+        web_sys::UrlSearchParams::new_with_str(&query())
+            .ok()?
+            .get(key)
     }
 
     pub fn start() {
@@ -70,50 +106,79 @@ mod web {
                 log::error!("no document");
                 return;
             };
-            let Some(canvas) = document.get_element_by_id(CANVAS_ID).and_then(|e| e.dyn_into::<web_sys::HtmlCanvasElement>().ok()) else {
+            let Some(canvas) = document
+                .get_element_by_id(CANVAS_ID)
+                .and_then(|e| e.dyn_into::<web_sys::HtmlCanvasElement>().ok())
+            else {
                 log::error!("missing <canvas id=\"{CANVAS_ID}\">");
                 return;
             };
             let mut options = eframe::WebOptions::default();
             // `?webgl`：强制 WebGL2 后端（排错或无头浏览器用）。
             if query().contains("webgl")
-                && let eframe::egui_wgpu::WgpuSetup::CreateNew(create) = &mut options.wgpu_options.wgpu_setup
+                && let eframe::egui_wgpu::WgpuSetup::CreateNew(create) =
+                    &mut options.wgpu_options.wgpu_setup
             {
                 create.instance_descriptor.backends = eframe::wgpu::Backends::GL;
             }
-            let result = eframe::WebRunner::new()
+            let runner = eframe::WebRunner::new();
+            MCP_RUNNER.with(|slot| *slot.borrow_mut() = Some(runner.clone()));
+            let result = runner
                 .start(
                     canvas,
                     options,
                     Box::new(|cc| {
                         if let Some(rs) = &cc.wgpu_render_state {
-                            log::info!("figcraft-web: wgpu backend {:?}", rs.adapter.get_info().backend);
+                            log::info!(
+                                "figcraft-web: wgpu backend {:?}",
+                                rs.adapter.get_info().backend
+                            );
                         }
-                        let reduce_motion = web_sys::window().and_then(|w| w.match_media("(prefers-reduced-motion: reduce)").ok().flatten());
+                        let reduce_motion = web_sys::window().and_then(|w| {
+                            w.match_media("(prefers-reduced-motion: reduce)")
+                                .ok()
+                                .flatten()
+                        });
                         let mut session = Session::new();
                         // Live sessions：浏览器加入桌面端主持的会话。
                         let ctx = cc.egui_ctx.clone();
-                        session.live.install(Box::new(figcraft_collab_net::NetLink::new(std::sync::Arc::new(move || ctx.request_repaint()))));
-                        let mut fig = FigApp::new(session, Box::new(OtoolsServices { reduce_motion, ctx: cc.egui_ctx.clone() }));
+                        session
+                            .live
+                            .install(Box::new(figcraft_collab_net::NetLink::new(
+                                std::sync::Arc::new(move || ctx.request_repaint()),
+                            )));
+                        let mut fig = FigApp::new(
+                            session,
+                            Box::new(OtoolsServices {
+                                reduce_motion,
+                                ctx: cc.egui_ctx.clone(),
+                            }),
+                        );
                         // 默认暗黑主题：跟随 OTools 宿主主题，否则 ?theme= 覆盖，再否则暗黑。
                         let theme = match crate::otools::theme() {
                             t if !t.is_empty() => t,
                             _ => query_param("theme").unwrap_or_else(|| "dark".into()),
                         };
-                        fig.session.prefs.theme = if theme == "dark" || theme == "light" { theme } else { "dark".into() };
+                        fig.session.prefs.theme = if theme == "dark" || theme == "light" {
+                            theme
+                        } else {
+                            "dark".into()
+                        };
                         // 跟随宿主语言（OTools 注入的 locale；否则退回浏览器 navigator.language）。
                         let host = crate::otools::language();
                         if !host.is_empty() {
                             fig.session.prefs.language = host;
                         }
-                        Ok(Box::new(WebShell { fig }))
+                        Ok(Box::new(WebShell { fig, ctx: None }))
                     }),
                 )
                 .await;
             if let Some(el) = document.get_element_by_id(LOADING_ID) {
                 match result {
                     Ok(()) => el.remove(),
-                    Err(e) => el.set_inner_html(&format!("<p>FigCraft 启动失败：{e:?}</p><p>需要支持 WebGPU 或 WebGL2 的浏览器。</p>")),
+                    Err(e) => el.set_inner_html(&format!(
+                        "<p>FigCraft 启动失败：{e:?}</p><p>需要支持 WebGPU 或 WebGL2 的浏览器。</p>"
+                    )),
                 }
             }
             install_locale_listener();
@@ -123,7 +188,9 @@ mod web {
     /// 监听宿主语言切换（OTools 注入的 `otools-locale-changed` 事件），置位标志并请求重绘；
     /// 真正更新 `prefs.language` 发生在下一帧 `WebShell::ui`。
     fn install_locale_listener() {
-        let Some(window) = web_sys::window() else { return };
+        let Some(window) = web_sys::window() else {
+            return;
+        };
         let closure = Closure::wrap(Box::new(|| {
             NEEDS_LANG_SYNC.with(|f| f.set(true));
             if let Some(ctx) = APP_CTX.with(|c| c.borrow().clone()) {
@@ -138,11 +205,11 @@ mod web {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
+use figcraft_ui_egui::Services;
 /// OTools 宿主服务：在 OTools 里用宿主的对话框读写文件；否则退回上游网页版的行为。
 #[cfg(target_arch = "wasm32")]
 use std::path::PathBuf;
-#[cfg(target_arch = "wasm32")]
-use figcraft_ui_egui::Services;
 
 #[cfg(target_arch = "wasm32")]
 struct OtoolsServices {
@@ -168,7 +235,12 @@ impl Services for OtoolsServices {
         })
     }
 
-    fn pick_save(&mut self, _title: &str, name: &str, _exts: &[&str]) -> figcraft_ui_egui::DialogFuture {
+    fn pick_save(
+        &mut self,
+        _title: &str,
+        name: &str,
+        _exts: &[&str],
+    ) -> figcraft_ui_egui::DialogFuture {
         if !crate::otools::available() {
             return Box::pin(std::future::ready(None));
         }
@@ -215,7 +287,9 @@ impl Services for OtoolsServices {
     }
 
     fn reduce_motion(&self) -> bool {
-        self.reduce_motion.as_ref().is_some_and(web_sys::MediaQueryList::matches)
+        self.reduce_motion
+            .as_ref()
+            .is_some_and(web_sys::MediaQueryList::matches)
     }
 
     fn system_language(&self) -> Option<String> {

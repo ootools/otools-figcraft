@@ -25,5 +25,97 @@
   "screenshots": [],
   "summary": "FigCraft（开源、纯 Rust 重写的 Figma 式界面设计工具）的 OTools 插件版：画布、自动布局、组件与变体、矢量网络、样式与变量、原型，以及 .figcraft / .fig / SVG 导入与导出。",
   "uuid": "otools-figcraft",
-  "version": "0.6.0"
+  "version": "0.6.0",
+  "mcp": {
+    "enabled": true,
+    "backend": "webview",
+    "namespace": "figcraft",
+    "expose": [
+      "list_commands",
+      "run_command",
+      "batch",
+      "create_node",
+      "set_properties",
+      "inspect_document",
+      "get_node",
+      "select",
+      "export",
+      "screenshot",
+      "open_file",
+      "save_file",
+      "undo",
+      "redo",
+      "pointer",
+      "key",
+      "type_text",
+      "inspect_ui"
+    ],
+    "annotations": {
+      "list_commands": {
+        "readOnly": true
+      },
+      "inspect_document": {
+        "readOnly": true
+      },
+      "get_node": {
+        "readOnly": true
+      },
+      "screenshot": {
+        "readOnly": true
+      },
+      "inspect_ui": {
+        "readOnly": true
+      },
+      "run_command": {
+        "readOnly": false,
+        "destructive": true
+      },
+      "batch": {
+        "readOnly": false,
+        "destructive": true
+      },
+      "create_node": {
+        "readOnly": false,
+        "destructive": true
+      },
+      "set_properties": {
+        "readOnly": false,
+        "destructive": true
+      },
+      "select": {
+        "readOnly": false
+      },
+      "export": {
+        "readOnly": false
+      },
+      "open_file": {
+        "readOnly": false,
+        "destructive": true
+      },
+      "save_file": {
+        "readOnly": false,
+        "destructive": true
+      },
+      "undo": {
+        "readOnly": false,
+        "destructive": true
+      },
+      "redo": {
+        "readOnly": false,
+        "destructive": true
+      },
+      "pointer": {
+        "readOnly": false,
+        "destructive": true
+      },
+      "key": {
+        "readOnly": false,
+        "destructive": true
+      },
+      "type_text": {
+        "readOnly": false,
+        "destructive": true
+      }
+    }
+  }
 }

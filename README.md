@@ -18,11 +18,13 @@ otools-figcraft/
 ├── shell/                 # 本插件自己写的 Rust 外壳 + HTML 桥
 │   ├── Cargo.toml         # 独立 workspace，path 依赖上游 crate
 │   ├── Trunk.toml         # trunk 构建配置（产物 dist/）
-│   ├── index.html         # window.figcraftOtools 宿主桥（唯一需要写的 JS）
+│   ├── index.html         # window.figcraftOtools 文件桥 + window.__otoolsMcp
 │   ├── src/
 │   │   ├── main.rs        # 改编自上游 figcraft-web：Services 走宿主、暗黑主题、跟随宿主语言
+│   │   ├── mcp.rs         # 复用图上游 figcraft-mcp 的工具表与调用，接到当前 FigApp
 │   │   ├── otools.rs      # wasm-bindgen 桥：openFiles/pickSavePath/writeHostFile/language/theme
 │   │   └── download.rs    # 上游浏览器下载回退（原样副本）
+│   ├── tests/             # MCP webview 桥契约测试（node --test）
 │   └── patches/           # 对上游的本地裁剪补丁（随 upstream 重拉而重放）
 │       └── figcraft-hostio.patch   # 把 engine 的 wasm 版 read/write 接到宿主桥
 ├── scripts/               # 构建 / 打包 / 发布 / 验证
@@ -56,6 +58,21 @@ FigCraft 自带 11 种语言（含简体中文 `zh-CN`），由上游 i18n 提�
 ### 4. 宿主内聚
 吞掉 `OpenUrl` 命令与外部链接（Discord / 文档站），让插件保持独立、不跳出 OTools。
 
+### 5. MCP：复用上游工具层，操作当前画布
+插件通过宿主现有的 **webview MCP 后端**暴露上游 `figcraft-mcp` 的 18 个工具，不另写一套
+工具定义或复制 400+ 命令：
+
+- `plugin.json` 声明 `mcp.backend = "webview"`，`expose` 列出全部 18 个工具；
+- `shell/index.html` 挂 `window.__otoolsMcp.listTools()/call(name, args)`；
+- `shell/src/mcp.rs` 直接调用上游 `tool_definitions()` / `call_tool()`，`Backend` 走
+  `figcraft_ui_egui::control::handle`，因此读写的是当前打开的 `FigApp` 与当前文档；
+- 工具调用从宿主 eval 进入，`WebRunner::app_mut` 用 `try_borrow_mut`，渲染帧内发生重入时
+  会返回可重试的错误，不会二次借用应用状态；
+- `screenshot`/`render_png` 在 webview 内通过 canvas/导出生成 PNG，避免依赖临时文件系统。
+
+首次勾选「暴露工具」时的 seed 由宿主按 `expose` 与 `destructive` 注解决定；会改文档或磁盘的
+工具标为 destructive，只读工具标为 readOnly。
+
 ## 本地开发
 
 ```bash
@@ -66,6 +83,9 @@ node scripts/fetch-craft-fonts.mjs
 # 2) 构建 WASM → dist/
 node scripts/build-wasm.mjs            # release
 node scripts/build-wasm.mjs --debug    # 带调试符号
+
+# MCP 桥契约测试
+node --test shell/tests/mcp-bridge.test.mjs
 
 # 3) 本地预览（可选）
 node scripts/serve-dist.mjs
