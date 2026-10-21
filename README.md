@@ -73,6 +73,22 @@ FigCraft 自带 11 种语言（含简体中文 `zh-CN`），由上游 i18n 提�
 首次勾选「暴露工具」时的 seed 由宿主按 `expose` 与 `destructive` 注解决定；会改文档或磁盘的
 工具标为 destructive，只读工具标为 readOnly。
 
+#### ES module 打包后导出不在 window 上（0.6.3 修复）
+
+`shell/index.html` 用 `<script type="module">` 加载 wasm，wasm-bindgen 的 ESM 产物把导出
+收在命名空间对象里，由 trunk 生成的胶水代码赋给 `window.wasmBindings`，**而不是**逐个挂成
+`window.figcraftMcpListTools` 这样的全局。而 MCP 桥原先只认 `window[name]`，于是
+`waitForMcpExport` 必然超时（宿主的等待是 5s，插件侧 4.5s），整个 MCP 不可用——0.6.2 发布
+包实测就是这个状态。
+
+修复是 `mcpExport(name)`：先看 `window[name]`，再回退 `window.wasmBindings[name]`。
+两种加载方式（经典 script 直接挂全局、ES module 挂 bindings）都能工作，并有对应单测。
+
+同时 `plugin.json` 增加 `mcp.webviewUrl = "dist/index.html?webgl"`：宿主（
+`src-tauri/src/platform/mcp/webview_lifecycle.rs::plugin_webview_url_for_mode`）优先用这个
+URL 加载 webview，只在缺省时回退 `entry`；`?webgl` 让 `shell/src/main.rs` 把 wgpu 后端切成
+GL，避免宿主 WebView 里默认后端起不来。
+
 ## 上游版本
 
 打包所用的上游提交。`upstream.pin` 是唯一真源，这张表用来回溯「哪个插件版本打的是哪份上游代码」，
@@ -80,6 +96,7 @@ FigCraft 自带 11 种语言（含简体中文 `zh-CN`），由上游 i18n 提�
 
 | 插件版本 | 上游标签 | 上游提交 | 打包日期 |
 | --- | --- | --- | --- |
+| 0.6.3 | v0.8.0 | `594dc8c6cf50a03b6d88abce877794f286f759b9` | 2026-10-21 |
 | 0.6.2 | v0.8.0 | `594dc8c6cf50a03b6d88abce877794f286f759b9` | 2026-10-21 |
 | 0.6.1 | — | `d1d8c3f652cea20bee02bdbc3ded9a2f5362ba08` | — |
 

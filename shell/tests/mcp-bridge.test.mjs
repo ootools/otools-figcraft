@@ -32,6 +32,7 @@ function load(options = {}) {
     __OTOOLS_MCP_READY_TIMEOUT_MS: options.readyTimeoutMs ?? 500,
     figcraftMcpListTools: options.listTools,
     figcraftMcpCall: options.call,
+    wasmBindings: options.wasmBindings,
   };
   context.window = context;
   vm.createContext(context);
@@ -70,6 +71,14 @@ test('listTools waits for a WASM export that mounts after the HTML bridge', asyn
   setTimeout(() => {
     context.figcraftMcpListTools = () => JSON.stringify(tools);
   }, 25);
+  assert.deepEqual(await bridge.listTools(), tools);
+});
+
+test('listTools reads the ES module export object used by the bundled web shell', async () => {
+  const tools = [{ name: 'list_commands' }, { name: 'inspect_ui' }];
+  const { bridge } = load({
+    wasmBindings: { figcraftMcpListTools: () => JSON.stringify(tools) },
+  });
   assert.deepEqual(await bridge.listTools(), tools);
 });
 

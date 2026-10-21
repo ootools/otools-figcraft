@@ -237,13 +237,22 @@
         ? window.__OTOOLS_MCP_READY_TIMEOUT_MS
         : 4500;
 
+      /** Resolve a wasm export from either a window global or the ES module binding object. */
+      function mcpExport(name) {
+        if (typeof window[name] === 'function') return window[name];
+        var bindings = window.wasmBindings;
+        return bindings && typeof bindings[name] === 'function' ? bindings[name] : null;
+      }
+
       /** Wait for a wasm export installed after the initial HTML script (the host's own wait is 5s). */
       function waitForMcpExport(name) {
-        if (typeof window[name] === 'function') return Promise.resolve(window[name]);
+        var found = mcpExport(name);
+        if (found) return Promise.resolve(found);
         var started = Date.now();
         return new Promise(function (resolve, reject) {
           (function poll() {
-            if (typeof window[name] === 'function') return resolve(window[name]);
+            var next = mcpExport(name);
+            if (next) return resolve(next);
             if (Date.now() - started >= MCP_READY_TIMEOUT_MS) {
               return reject(new Error('FigCraft MCP backend did not start in time (' + name + ' is missing)'));
             }
