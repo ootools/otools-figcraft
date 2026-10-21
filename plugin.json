@@ -25,7 +25,7 @@
   "screenshots": [],
   "summary": "FigCraft（开源、纯 Rust 重写的 Figma 式界面设计工具）的 OTools 插件版：画布、自动布局、组件与变体、矢量网络、样式与变量、原型，以及 .figcraft / .fig / SVG 导入与导出。",
   "uuid": "otools-figcraft",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "mcp": {
     "enabled": true,
     "backend": "webview",
