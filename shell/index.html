@@ -284,6 +284,54 @@
           }).catch(function (error) {
             return mcpError(error);
           });
+        },
+
+        /** @returns {Promise<{resources: Array<object>}>} the document and the command catalog. */
+        listResources: function () {
+          return waitForMcpExport('figcraftMcpListResources').then(function (fn) {
+            return JSON.parse(fn());
+          }).catch(function (error) {
+            console.warn('[figcraft-mcp] listResources failed', error);
+            return { resources: [] };
+          });
+        },
+
+        /** @returns {Promise<{resourceTemplates: Array<object>}>} one layer / one command. */
+        listResourceTemplates: function () {
+          return waitForMcpExport('figcraftMcpListResourceTemplates').then(function (fn) {
+            return JSON.parse(fn());
+          }).catch(function (error) {
+            console.warn('[figcraft-mcp] listResourceTemplates failed', error);
+            return { resourceTemplates: [] };
+          });
+        },
+
+        /** @returns {Promise<{contents: Array<object>}>} */
+        readResource: function (uri) {
+          return waitForMcpExport('figcraftMcpReadResource').then(function (fn) {
+            return JSON.parse(fn(String(uri || '')));
+          }).catch(function (error) {
+            return { error: String((error && error.message) || error) };
+          });
+        },
+
+        /** @returns {Promise<{prompts: Array<object>}>} the design workflows. */
+        listPrompts: function () {
+          return waitForMcpExport('figcraftMcpListPrompts').then(function (fn) {
+            return JSON.parse(fn());
+          }).catch(function (error) {
+            console.warn('[figcraft-mcp] listPrompts failed', error);
+            return { prompts: [] };
+          });
+        },
+
+        /** @returns {Promise<{description?: string, messages: Array<object>}>} */
+        getPrompt: function (name, args) {
+          return waitForMcpExport('figcraftMcpGetPrompt').then(function (fn) {
+            return JSON.parse(fn(String(name || ''), JSON.stringify(args || {})));
+          }).catch(function (error) {
+            return { error: String((error && error.message) || error) };
+          });
         }
       };
       // </otools-mcp-bridge>

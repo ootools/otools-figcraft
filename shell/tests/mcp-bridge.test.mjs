@@ -32,6 +32,11 @@ function load(options = {}) {
     __OTOOLS_MCP_READY_TIMEOUT_MS: options.readyTimeoutMs ?? 500,
     figcraftMcpListTools: options.listTools,
     figcraftMcpCall: options.call,
+    figcraftMcpListResources: options.listResources,
+    figcraftMcpReadResource: options.readResource,
+    figcraftMcpListResourceTemplates: options.listResourceTemplates,
+    figcraftMcpListPrompts: options.listPrompts,
+    figcraftMcpGetPrompt: options.getPrompt,
     wasmBindings: options.wasmBindings,
   };
   context.window = context;
@@ -139,4 +144,131 @@ test('plugin manifest marks tools that can change the document or disk as destru
   for (const name of ['list_commands', 'inspect_document', 'get_node', 'screenshot', 'inspect_ui']) {
     assert.equal(manifest.mcp.annotations?.[name]?.readOnly, true, `${name} should be read-only`);
   }
+});
+
+// ── resources / prompts ────────────────────────────────────────────────────
+//
+// 上游 figcraft-mcp 提供 2 个资源、2 个资源模板和 4 个 prompt。宿主
+// `WebviewEval` 会调 window.__otoolsMcp.listResources / readResource /
+// listResourceTemplates / listPrompts / getPrompt，所以这几个方法必须挂在桥上。
+
+test('bridge exposes the resource and prompt methods the host calls', () => {
+  const { bridge } = load();
+  for (const name of ['listResources', 'readResource', 'listResourceTemplates', 'listPrompts', 'getPrompt']) {
+    assert.equal(typeof bridge[name], 'function', `${name} should be on window.__otoolsMcp`);
+  }
+});
+
+test('listResources returns the upstream resource table', async () => {
+  const { bridge } = load({
+    listResources: () => JSON.stringify({
+      resources: [
+        { uri: 'figcraft://document', name: 'document', mimeType: 'application/json' },
+        { uri: 'figcraft://commands', name: 'commands', mimeType: 'application/json' },
+      ],
+    }),
+  });
+  const listed = await bridge.listResources();
+  assert.deepEqual(listed.resources.map((r) => r.uri), [
+    'figcraft://document',
+    'figcraft://commands',
+  ]);
+});
+
+test('listResourceTemplates returns the upstream templates', async () => {
+  const { bridge } = load({
+    listResourceTemplates: () => JSON.stringify({
+      resourceTemplates: [
+        { uriTemplate: 'figcraft://node/{id}', name: 'node' },
+        { uriTemplate: 'figcraft://command/{id}', name: 'command' },
+      ],
+    }),
+  });
+  const listed = await bridge.listResourceTemplates();
+  assert.equal(listed.resourceTemplates.length, 2);
+  assert.equal(listed.resourceTemplates[0].uriTemplate, 'figcraft://node/{id}');
+});
+
+test('readResource forwards the uri and returns contents', async () => {
+  const seen = [];
+  const { bridge } = load({
+    readResource: (uri) => {
+      seen.push(uri);
+      return JSON.stringify({ contents: [{ uri, mimeType: 'application/json', text: '{"id":1}' }] });
+    },
+  });
+  const read = await bridge.readResource('figcraft://node/7');
+  assert.deepEqual(seen, ['figcraft://node/7']);
+  assert.equal(read.contents[0].text, '{"id":1}');
+});
+
+test('readResource surfaces an upstream failure as error, not as empty contents', async () => {
+  const { bridge } = load({
+    readResource: () => JSON.stringify({ error: 'no such node 7' }),
+  });
+  const read = await bridge.readResource('figcraft://node/7');
+  assert.equal(read.error, 'no such node 7');
+  assert.equal(read.contents, undefined);
+});
+
+test('listPrompts returns the upstream prompt table', async () => {
+  const { bridge } = load({
+    listPrompts: () => JSON.stringify({
+      prompts: [{ name: 'mobile_screen', title: 'Design a mobile screen', arguments: [] }],
+    }),
+  });
+  const listed = await bridge.listPrompts();
+  assert.equal(listed.prompts[0].name, 'mobile_screen');
+});
+
+test('getPrompt forwards the name and arguments as JSON text', async () => {
+  // wasm 端签名是 (name: &str, args_json: &str)，所以第二个参数是 JSON 字符串。
+  const seen = [];
+  const { bridge } = load({
+    getPrompt: (name, argsJson) => {
+      seen.push([name, JSON.parse(argsJson)]);
+      return JSON.stringify({
+        description: 'one screen',
+        messages: [{ role: 'user', content: { type: 'text', text: 'Design a login screen' } }],
+      });
+    },
+  });
+  const rendered = await bridge.getPrompt('mobile_screen', { screen: 'login' });
+  assert.deepEqual(seen, [['mobile_screen', { screen: 'login' }]]);
+  assert.equal(rendered.messages[0].content.text, 'Design a login screen');
+});
+
+test('getPrompt with no arguments sends an empty object', async () => {
+  const seen = [];
+  const { bridge } = load({
+    getPrompt: (name, argsJson) => {
+      seen.push(JSON.parse(argsJson));
+      return JSON.stringify({ messages: [{ role: 'user', content: { type: 'text', text: 'x' } }] });
+    },
+  });
+  await bridge.getPrompt('design_system');
+  assert.deepEqual(seen, [{}]);
+});
+
+test('a missing resource export degrades to an empty table instead of hanging', async () => {
+  // 老版本 wasm 没有这些导出：宿主按「该插件没有资源」处理，不能让桥挂住。
+  // 注意用长度而不是 deepEqual：桥跑在 vm realm 里，数组不是同一个 Array 原型。
+  const { bridge } = load();
+  const listed = await bridge.listResources();
+  assert.equal(listed.resources.length, 0);
+  const templates = await bridge.listResourceTemplates();
+  assert.equal(templates.resourceTemplates.length, 0);
+  const prompts = await bridge.listPrompts();
+  assert.equal(prompts.prompts.length, 0);
+});
+
+test('plugin manifest declares the upstream resources and prompts', () => {
+  const manifest = JSON.parse(fs.readFileSync(path.resolve(shell, '..', 'plugin.json'), 'utf8'));
+  assert.deepEqual(manifest.mcp.resources, ['figcraft://document', 'figcraft://commands']);
+  assert.deepEqual(manifest.mcp.prompts, [
+    'mobile_screen',
+    'design_system',
+    'landing_page',
+    'prototype_flow',
+  ]);
 });

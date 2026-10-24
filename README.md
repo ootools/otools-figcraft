@@ -70,6 +70,18 @@ FigCraft 自带 11 种语言（含简体中文 `zh-CN`），由上游 i18n 提�
   会返回可重试的错误，不会二次借用应用状态；
 - `screenshot`/`render_png` 在 webview 内通过 canvas/导出生成 PNG，避免依赖临时文件系统。
 
+#### resources 与 prompts 也走同一条上游链路
+
+上游除了 18 个工具，还提供 **2 个资源**（`figcraft://document`、`figcraft://commands`）、
+**2 个资源模板**（`figcraft://node/{id}`、`figcraft://command/{id}`）和 **4 个 prompt**
+（`mobile_screen` / `design_system` / `landing_page` / `prototype_flow`）。这些同样不复制：
+
+- 桥多暴露 `listResources` / `readResource` / `listResourceTemplates` / `listPrompts` /
+  `getPrompt` 五个方法，宿主 `WebviewEval` 逐个调用；
+- `shell/src/mcp.rs` 用一个零大小的 `GlobalBackend` 走 `with_live_app` 拿到应用，再交给
+  上游 `Server::handle` 分发 `resources/*` 与 `prompts/*`。这样 URI 表、模板的 `{id}` 解析、
+  prompt 的默认值替换全部由上游产生，适配层不存在会过期的副本。
+
 首次勾选「暴露工具」时的 seed 由宿主按 `expose` 与 `destructive` 注解决定；会改文档或磁盘的
 工具标为 destructive，只读工具标为 readOnly。
 
@@ -96,6 +108,7 @@ GL，避免宿主 WebView 里默认后端起不来。
 
 | 插件版本 | 上游标签 | 上游提交 | 打包日期 |
 | --- | --- | --- | --- |
+| 0.6.4 | v0.8.0 | `594dc8c6cf50a03b6d88abce877794f286f759b9` | 2026-10-24 |
 | 0.6.3 | v0.8.0 | `594dc8c6cf50a03b6d88abce877794f286f759b9` | 2026-10-21 |
 | 0.6.2 | v0.8.0 | `594dc8c6cf50a03b6d88abce877794f286f759b9` | 2026-10-21 |
 | 0.6.1 | — | `d1d8c3f652cea20bee02bdbc3ded9a2f5362ba08` | — |
