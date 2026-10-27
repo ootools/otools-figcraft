@@ -62,6 +62,12 @@ features = [
   "Window",
 ]
 
+# 上游 workspace 里的 `[patch.crates-io]` 不会跟着 path 依赖带过来：补丁只在发起构建的
+# 那个 workspace 根节点生效。figcraft 上游从 v0.11.0 起给 krilla 打了 craft-libs 的补丁，
+# 这里原样复制；上游更新后要同步。
+[patch.crates-io]
+krilla = { git = "https://github.com/storytold/craft-libs", rev = "9f75d3dc19b4b514c4f3d4847ed1ec1b0e86b4ef" }
+
 [profile.release]
 opt-level = 3
 lto = "thin"

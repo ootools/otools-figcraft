@@ -1,8 +1,8 @@
 diff --git a/crates/engine/Cargo.toml b/crates/engine/Cargo.toml
-index f610c38..f6c3145 100644
+index 545d872..6a26981 100644
 --- a/crates/engine/Cargo.toml
 +++ b/crates/engine/Cargo.toml
-@@ -29,6 +29,12 @@ base64 = { workspace = true }
+@@ -30,6 +30,12 @@ base64 = { workspace = true }
  regex = { workspace = true }
  web-time = "1.1.0"
  
@@ -16,7 +16,7 @@ index f610c38..f6c3145 100644
  wat = { workspace = true }
  image = { workspace = true }
 diff --git a/crates/engine/src/cmd/file.rs b/crates/engine/src/cmd/file.rs
-index 5e27c57..ee8b4bf 100644
+index 4bafa56..b65d7e7 100644
 --- a/crates/engine/src/cmd/file.rs
 +++ b/crates/engine/src/cmd/file.rs
 @@ -11,6 +11,10 @@ use super::{CommandSpec, ok};
@@ -27,10 +27,10 @@ index 5e27c57..ee8b4bf 100644
 +#[cfg(target_arch = "wasm32")]
 +pub mod host_io;
 +
- pub fn specs() -> Vec<CommandSpec> {
-     vec![
-         spec!("file.new", "New design file", "{name?}", false, |s, p| {
-@@ -428,6 +432,9 @@ fn read(path: &str) -> Result<Vec<u8>> {
+ /// A new file of `kind` in a tab of its own.
+ fn new_file(s: &mut Session, p: &Value, kind: FileKind) -> Result<Value> {
+     let name = string(p, "name").unwrap_or_else(|| if kind == FileKind::Board { "Untitled board" } else { "Untitled" }.into());
+@@ -466,6 +470,9 @@ fn read(path: &str) -> Result<Vec<u8>> {
  
  #[cfg(target_arch = "wasm32")]
  fn read(path: &str) -> Result<Vec<u8>> {
@@ -40,7 +40,7 @@ index 5e27c57..ee8b4bf 100644
      Err(EngineError::Other(format!("{path}: no file system in the browser")))
  }
  
-@@ -450,7 +457,8 @@ pub(crate) fn write(path: &str, bytes: &[u8]) -> Result<()> {
+@@ -484,7 +491,8 @@ pub(crate) fn write(path: &str, bytes: &[u8]) -> Result<()> {
  
  #[cfg(target_arch = "wasm32")]
  pub(crate) fn write(path: &str, _bytes: &[u8]) -> Result<()> {
