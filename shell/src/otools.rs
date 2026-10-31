@@ -42,6 +42,31 @@ extern "C" {
     /// 写宿主磁盘文件：`{path, dataBase64}`（engine 的 host_io 与导出下载都走这条）。
     #[wasm_bindgen(js_namespace = figcraftOtools, js_name = "writeHostFile")]
     fn host_write_file(path: &str, data_base64: &str) -> js_sys::Promise;
+
+    /// 宿主投递的「打开方式」：JS 侧已把文件读成字节攒好，这里一次取走。
+    #[wasm_bindgen(js_namespace = figcraftOtools, js_name = "takeDelivered")]
+    fn take_delivered_raw() -> js_sys::Array;
+}
+
+/// 取走宿主投递的文件，返回 `(文件名, base64)`。
+///
+/// 不解码：上游 `file.open` 的命令参数本来就是 base64（`{name, data}`），
+/// 原样交过去少一次编解码往返。
+pub fn drain_delivered() -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for item in take_delivered_raw().iter() {
+        if !item.is_object() {
+            continue;
+        }
+        let name = field(&item, "name").unwrap_or_else(|| "untitled.figcraft".to_string());
+        let data = field(&item, "dataBase64").unwrap_or_default();
+        if data.is_empty() {
+            log::warn!("delivered file {name} is empty");
+            continue;
+        }
+        out.push((name, data));
+    }
+    out
 }
 
 /// 宿主是否可用（不在 OTools 里时退回上游的浏览器行为：下载文件）。

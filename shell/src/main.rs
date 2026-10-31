@@ -70,6 +70,11 @@ mod web {
         fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
             let ctx = ui.ctx().clone();
             self.ctx = Some(ctx.clone());
+            // 宿主投递的「打开方式」：系统里双击已绑定扩展名的文件 → 用本插件打开。
+            // `run_user` 是「用户打开」语义（含导入报告、缺字体检查），与「文件 ▸ 打开」一致。
+            for (name, data) in crate::otools::drain_delivered() {
+                self.fig.run_user("file.open", serde_json::json!({ "name": name, "data": data }));
+            }
             APP_CTX.with(|c| *c.borrow_mut() = Some(ctx));
             // 跟随宿主语言切换：变了就更新 prefs.language。
             if NEEDS_LANG_SYNC.with(|f| f.replace(false)) {
@@ -199,6 +204,11 @@ mod web {
         }) as Box<dyn FnMut()>);
         let _ = window.add_event_listener_with_callback(
             "otools-locale-changed",
+            closure.as_ref().unchecked_ref::<js_sys::Function>(),
+        );
+        // 宿主投递了文件：同一份「置位 + 请求重绘」逻辑，让下一帧的 logic 去取件。
+        let _ = window.add_event_listener_with_callback(
+            "otools-open-files-arrived",
             closure.as_ref().unchecked_ref::<js_sys::Function>(),
         );
         closure.forget();

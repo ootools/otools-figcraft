@@ -4,6 +4,11 @@
   "displayName": "FigCraft",
   "displayNameCN": "FigCraft 设计",
   "entry": "dist/index.html",
+  "fileAssociations": [
+    { "ext": "figcraft", "desc": "FigCraft 文档", "mime": "application/octet-stream" },
+    { "ext": "fig", "desc": "Figma 文档", "mime": "application/octet-stream" },
+    { "ext": "svg", "desc": "SVG 矢量图", "mime": "image/svg+xml" }
+  ],
   "quickDev": true,
   "hasAd": false,
   "icon": "🎨",
