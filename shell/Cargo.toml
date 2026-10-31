@@ -28,14 +28,14 @@ figcraft-engine = { path = "../upstream/crates/engine" }
 figcraft-ui-egui = { path = "../upstream/crates/ui-egui" }
 figcraft-collab-net = { path = "../upstream/crates/collab-net" }
 figcraft-mcp = { path = "../upstream/crates/mcp" }
-egui = { version = "0.36", default-features = false }
+egui = { version = "0.37", default-features = false }
 log = { version = "0.4", default-features = false }
 serde_json = { version = "1", features = ["float_roundtrip"] }
 base64 = "0.22"
 
 # 只在 wasm 下需要的依赖（宿主/桌面下本 crate 什么都不做）
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-eframe = { version = "0.36", default-features = false, features = ["persistence", "default_fonts", "wgpu", "accesskit"] }
+eframe = { version = "0.37", default-features = false, features = ["persistence", "default_fonts", "wgpu", "accesskit"] }
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
@@ -63,10 +63,29 @@ features = [
 ]
 
 # 上游 workspace 里的 `[patch.crates-io]` 不会跟着 path 依赖带过来：补丁只在发起构建的
-# 那个 workspace 根节点生效。figcraft 上游从 v0.11.0 起给 krilla 打了 craft-libs 的补丁，
+# 那个 workspace 根节点生效。0.13 起上游还把整个 egui 家族与 winit 钉在 storytold 的
+# 审查 commit 上；krilla 仍是 craft-libs 的 vendored 补丁版（rev 跟着上游走）。
 # 这里原样复制；上游更新后要同步。
 [patch.crates-io]
-krilla = { git = "https://github.com/storytold/craft-libs", rev = "9f75d3dc19b4b514c4f3d4847ed1ec1b0e86b4ef" }
+ecolor = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
+emath = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
+epaint = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
+epaint_default_fonts = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
+egui = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
+egui-winit = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
+egui-wgpu = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
+egui_glow = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
+egui_extras = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
+egui_kittest = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
+egui_system_font_provider = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
+eframe = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
+egui_demo_lib = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
+egui_inspection = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
+winit = { git = "https://github.com/storytold/winit.git", rev = "a517b3846ee8457d84ee4975110bfda6797c44dc" }
+
+# craft-libs' vendored krilla 0.8.2: decoded PNGs are capped at 1 GiB and reserved fallibly, and a
+# panic while drawing unwinds without aborting.
+krilla = { git = "https://github.com/storytold/craft-libs", rev = "e11f9d9aebea5f6b8e74643c1ea1ed172ba5f545" }
 
 [profile.release]
 opt-level = 3

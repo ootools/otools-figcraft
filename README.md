@@ -108,6 +108,7 @@ GL，避免宿主 WebView 里默认后端起不来。
 
 | 插件版本 | 上游标签 | 上游提交 | 打包日期 |
 | --- | --- | --- | --- |
+| 0.6.6 | v0.13.1+ | `0abbe44cd4a2450cb6d25c9368bc96a6ab88af19` | 2026-10-31 |
 | 0.6.5 | v0.11.2 | `d4a303d4708602a9df1738960852d18b185a616b` | 2026-10-27 |
 | 0.6.4 | v0.8.0 | `594dc8c6cf50a03b6d88abce877794f286f759b9` | 2026-10-24 |
 | 0.6.3 | v0.8.0 | `594dc8c6cf50a03b6d88abce877794f286f759b9` | 2026-10-21 |
@@ -135,7 +136,7 @@ node scripts/serve-dist.mjs
 pwsh -File scripts/deploy-to-otools.ps1
 ```
 
-工具链要求：rustc ≥ 1.95（egui 0.36）、wasm32-unknown-unknown 目标、trunk。
+工具链要求：rustc ≥ 1.95（egui 0.37）、wasm32-unknown-unknown 目标、trunk。
 
 ## 发布
 

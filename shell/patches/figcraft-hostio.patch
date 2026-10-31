@@ -1,10 +1,10 @@
 diff --git a/crates/engine/Cargo.toml b/crates/engine/Cargo.toml
-index 545d872..6a26981 100644
+index 11fb7f2..9cc933e 100644
 --- a/crates/engine/Cargo.toml
 +++ b/crates/engine/Cargo.toml
-@@ -30,6 +30,12 @@ base64 = { workspace = true }
- regex = { workspace = true }
- web-time = "1.1.0"
+@@ -39,6 +39,12 @@ web-time = "1.1.0"
+ craft-font-store = { workspace = true, features = ["bundled-index"] }
+ craft-font-catalog = { workspace = true }
  
 +# OTools 插件外壳在 wasm 下把文件 I/O 接到宿主；只在 wasm 目标需要这些依赖。
 +[target.'cfg(target_arch = "wasm32")'.dependencies]
@@ -13,15 +13,15 @@ index 545d872..6a26981 100644
 +wasm-bindgen-futures = "0.4"
 +
  [dev-dependencies]
+ zip = { workspace = true }
  wat = { workspace = true }
- image = { workspace = true }
 diff --git a/crates/engine/src/cmd/file.rs b/crates/engine/src/cmd/file.rs
-index 4bafa56..b65d7e7 100644
+index 0cfdd1f..bc09fbe 100644
 --- a/crates/engine/src/cmd/file.rs
 +++ b/crates/engine/src/cmd/file.rs
-@@ -11,6 +11,10 @@ use super::{CommandSpec, ok};
- use crate::params::*;
- use crate::{DocState, EngineError, Result, Session, bad, spec};
+@@ -45,6 +45,10 @@ pub use version::MAX_AUTOSAVES;
+ pub(crate) use version::{add_version, keep_in_history, read_version, unique_id};
+ use version::{autosave, restore_version, save_version, version_index, version_json, version_list};
  
 +// OTools 插件外壳在 wasm 下把同步的 `read`/`write` 接到 `window.figcraftOtools`。
 +#[cfg(target_arch = "wasm32")]
@@ -30,26 +30,6 @@ index 4bafa56..b65d7e7 100644
  /// A new file of `kind` in a tab of its own.
  fn new_file(s: &mut Session, p: &Value, kind: FileKind) -> Result<Value> {
      let name = string(p, "name").unwrap_or_else(|| if kind == FileKind::Board { "Untitled board" } else { "Untitled" }.into());
-@@ -466,6 +470,9 @@ fn read(path: &str) -> Result<Vec<u8>> {
- 
- #[cfg(target_arch = "wasm32")]
- fn read(path: &str) -> Result<Vec<u8>> {
-+    if let Some(b) = host_io::cache_get(path) {
-+        return Ok(b);
-+    }
-     Err(EngineError::Other(format!("{path}: no file system in the browser")))
- }
- 
-@@ -484,7 +491,8 @@ pub(crate) fn write(path: &str, bytes: &[u8]) -> Result<()> {
- 
- #[cfg(target_arch = "wasm32")]
- pub(crate) fn write(path: &str, _bytes: &[u8]) -> Result<()> {
--    Err(EngineError::Other(format!("{path}: no file system in the browser")))
-+    host_io::write(path, _bytes.to_vec());
-+    Ok(())
- }
- 
- fn ext(path: &str) -> String {
 diff --git a/crates/engine/src/cmd/file/host_io.rs b/crates/engine/src/cmd/file/host_io.rs
 new file mode 100644
 index 0000000..0c93df5
@@ -102,3 +82,27 @@ index 0000000..0c93df5
 +        let _ = JsFuture::from(host_write_file(&path, &data_base64)).await;
 +    });
 +}
+diff --git a/crates/engine/src/cmd/file/load.rs b/crates/engine/src/cmd/file/load.rs
+index 5033a05..81b6850 100644
+--- a/crates/engine/src/cmd/file/load.rs
++++ b/crates/engine/src/cmd/file/load.rs
+@@ -26,6 +26,9 @@ pub(super) fn read(path: &str) -> Result<Vec<u8>> {
+ 
+ #[cfg(target_arch = "wasm32")]
+ pub(super) fn read(path: &str) -> Result<Vec<u8>> {
++    if let Some(b) = super::host_io::cache_get(path) {
++        return Ok(b);
++    }
+     Err(EngineError::Other(format!("{path}: no file system in the browser")))
+ }
+ 
+@@ -44,7 +47,8 @@ pub(crate) fn write(path: &str, bytes: &[u8]) -> Result<()> {
+ 
+ #[cfg(target_arch = "wasm32")]
+ pub(crate) fn write(path: &str, _bytes: &[u8]) -> Result<()> {
+-    Err(EngineError::Other(format!("{path}: no file system in the browser")))
++    super::host_io::write(path, _bytes.to_vec());
++    Ok(())
+ }
+ 
+ pub(super) fn ext(path: &str) -> String {
