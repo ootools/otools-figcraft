@@ -10,3 +10,4 @@ shell/Cargo.lock
 dist-pack/
 node_modules/
 *.log
+tmp/
