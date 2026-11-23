@@ -61,11 +61,6 @@ features = [
   "UrlSearchParams",
   "Window",
 ]
-
-# 上游 workspace 里的 `[patch.crates-io]` 不会跟着 path 依赖带过来：补丁只在发起构建的
-# 那个 workspace 根节点生效。0.13 起上游还把整个 egui 家族与 winit 钉在 storytold 的
-# 审查 commit 上；krilla 仍是 craft-libs 的 vendored 补丁版（rev 跟着上游走）。
-# 这里原样复制；上游更新后要同步。
 [patch.crates-io]
 ecolor = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
 emath = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
@@ -82,11 +77,7 @@ eframe = { git = "https://github.com/storytold/egui.git", rev = "6d518fc79968157
 egui_demo_lib = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
 egui_inspection = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
 winit = { git = "https://github.com/storytold/winit.git", rev = "a517b3846ee8457d84ee4975110bfda6797c44dc" }
-
-# craft-libs' vendored krilla 0.8.2: decoded PNGs are capped at 1 GiB and reserved fallibly, and a
-# panic while drawing unwinds without aborting.
-krilla = { git = "https://github.com/storytold/craft-libs", rev = "e11f9d9aebea5f6b8e74643c1ea1ed172ba5f545" }
-
+krilla = { git = "https://github.com/storytold/craft-libs", rev = "a49329e71e32ad93794ab595c41f33209a7d2220" }
 [profile.release]
 opt-level = 3
 lto = "thin"
