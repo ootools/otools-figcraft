@@ -3,7 +3,7 @@
   "ssh": "git@github.com:storytold/figcraft.git",
   "https": "https://github.com/storytold/figcraft.git",
   "ref": "main",
-  "commit": "bbf7ad418f3e02d89546a6c7b044e51df67177f0",
+  "commit": "ef2a9eeefc7af519fe7c26cc4c4b31d2284b09af",
   "strategy": "shallow-fetch-pinned-commit",
   "note": "上游代码不入库。此处保留的是迁移前 git subtree 锁定的那个 commit，行为与迁移前一致；改用 node scripts/fetch-upstream.mjs 按需拉取。要同步上游就把 commit 改成新的完整 SHA 再拉一次。"
 }

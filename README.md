@@ -147,3 +147,8 @@ pwsh -File scripts/deploy-to-otools.ps1
 
 最终产物（`plugin.json` + `logo.svg` + `dist/`）由 `deploy-to-otools.ps1`
 同步到 otools 主仓库的 `plugins/otools-figcraft/`。
+
+## 当前移植快照（2026-11-25）
+
+当前 `upstream.pin` 固定到 [`ef2a9eeefc7a`](https://github.com/storytold/figcraft/commit/ef2a9eeefc7af519fe7c26cc4c4b31d2284b09af)。
+本次同步包含上游自 `bbf7ad418f3e` 之后的更新；插件发布版本维持不变，发布时再记录发行版本。
